@@ -7,11 +7,22 @@ class TestMetadataSync(unittest.TestCase):
 
     class FakeFile(object):
         def __init__(self, content):
-            self.content = content
             self.closed = None
+            self.data = content
 
         def read(self, size=-1):
-            return self.content
+            return self.data
+
+        def write(self, data):
+            self.data += data
+
+        def seek(self, pos, flags=None):
+            if pos != 0:
+                raise RuntimeError
+            self.data = ''
+
+        def truncate(self):
+            return
 
         def __enter__(self):
             if self.closed:
@@ -64,8 +75,10 @@ class TestMetadataSync(unittest.TestCase):
     def test_get_last_row_new_index(self, exists_mock, open_mock):
         exists_mock.return_value = True
         status = {'db_id': {'last_row': 42, 'index': 'old-index'}}
-        open_mock.return_value = self.FakeFile(json.dumps(status))
+        fake_file = self.FakeFile(json.dumps(status))
+        open_mock.return_value = fake_file
         self.assertEqual(0, self.sync.get_last_row('db_id'))
+        self.assertTrue(fake_file.closed)
 
     @mock.patch('swift_metadata_sync.metadata_sync.open')
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
@@ -73,6 +86,63 @@ class TestMetadataSync(unittest.TestCase):
         exists_mock.return_value = True
         open_mock.return_value = self.FakeFile('')
         self.assertEqual(0, self.sync.get_last_row('db_id'))
+
+    @mock.patch('swift_metadata_sync.metadata_sync.os.mkdir')
+    @mock.patch('swift_metadata_sync.metadata_sync.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_save_last_row_dir_does_not_exist(self, exists_mock, open_mock,
+            mkdir_mock):
+        exists_mock.return_value = False
+        fake_file = self.FakeFile('')
+        open_mock.return_value = fake_file
+        self.sync.save_last_row(42, 'db-id')
+
+        mkdir_mock.assert_called_once_with(self.sync._status_account_dir)
+        self.assertTrue(fake_file.closed)
+        status = json.loads(fake_file.data)
+        self.assertIn('db-id', status)
+        self.assertEqual(42, status['db-id']['last_row'])
+        self.assertEqual(self.test_index, status['db-id']['index'])
+
+    @mock.patch('swift_metadata_sync.metadata_sync.os.mkdir')
+    @mock.patch('swift_metadata_sync.metadata_sync.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_save_last_row_does_not_exist(self, exists_mock, open_mock,
+                                          mkdir_mock):
+        def fake_exists(path):
+            if path.endswith(self.sync._account):
+                return True
+            return False
+
+        fake_file = self.FakeFile('')
+        exists_mock.side_effect = fake_exists
+        open_mock.return_value = fake_file
+        self.sync.save_last_row(42, 'db-id')
+
+        mkdir_mock.assert_not_called()
+        self.assertTrue(fake_file.closed)
+        status = json.loads(fake_file.data)
+        self.assertIn('db-id', status)
+        self.assertEqual(42, status['db-id']['last_row'])
+        self.assertEqual(self.test_index, status['db-id']['index'])
+
+    @mock.patch('swift_metadata_sync.metadata_sync.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_save_last_row_new_db_id(self, exists_mock, open_mock):
+        old_status = {'old_id': {'last_row': 1, 'index': self.test_index}}
+        fake_file = self.FakeFile(json.dumps(old_status))
+        exists_mock.return_value = True
+        open_mock.return_value = fake_file
+
+        self.sync.save_last_row(42, 'new-id')
+        self.assertTrue(fake_file.closed)
+        status = json.loads(fake_file.data)
+        self.assertIn('new-id', status)
+        self.assertIn('old_id', status)
+        self.assertEqual(42, status['new-id']['last_row'])
+        self.assertEqual(self.test_index, status['new-id']['index'])
+        self.assertEqual(1, status['old_id']['last_row'])
+        self.assertEqual(self.test_index, status['old_id']['index'])
 
     @mock.patch('container_crawler.base_sync.InternalClient')
     @mock.patch(
