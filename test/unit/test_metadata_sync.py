@@ -1,7 +1,10 @@
-from swift_metadata_sync import metadata_sync
+import email
 import json
 import mock
 import unittest
+
+from swift_metadata_sync import metadata_sync
+
 
 class TestMetadataSync(unittest.TestCase):
 
@@ -37,6 +40,8 @@ class TestMetadataSync(unittest.TestCase):
         'swift_metadata_sync.metadata_sync.MetadataSync._verify_mapping')
     @mock.patch('container_crawler.base_sync.InternalClient')
     def setUp(self, mock_client, mock_verify_mapping):
+        self.swift_mock = mock.Mock()
+        mock_client.return_value = self.swift_mock
         self.status_dir = '/status/dir'
         self.es_hosts = 'es.example.com'
         self.test_index = 'test_index'
@@ -91,7 +96,7 @@ class TestMetadataSync(unittest.TestCase):
     @mock.patch('swift_metadata_sync.metadata_sync.open')
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_save_last_row_dir_does_not_exist(self, exists_mock, open_mock,
-            mkdir_mock):
+                                              mkdir_mock):
         exists_mock.return_value = False
         fake_file = self.FakeFile('')
         open_mock.return_value = fake_file
@@ -150,13 +155,13 @@ class TestMetadataSync(unittest.TestCase):
         helpers_mock.bulk.return_value = (None, [])
 
         self.sync.handle(rows)
-        expected_delete_ops = [
-            {'_op_type': 'delete',
-             '_id': '/'.join([self.test_account, self.test_container,
-                              row['name']]),
-             '_index': self.test_index,
-             '_type': metadata_sync.MetadataSync.DOC_TYPE
-            } for row in rows]
+        expected_delete_ops = [{
+            '_op_type': 'delete',
+            '_id': '/'.join([self.test_account, self.test_container,
+                             row['name']]),
+            '_index': self.test_index,
+            '_type': metadata_sync.MetadataSync.DOC_TYPE
+        } for row in rows]
         helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
                                                   expected_delete_ops,
                                                   raise_on_error=False,
@@ -173,13 +178,13 @@ class TestMetadataSync(unittest.TestCase):
 
         with self.assertRaises(RuntimeError):
             self.sync.handle(rows)
-        expected_delete_ops = [
-            {'_op_type': 'delete',
-             '_id': '/'.join([self.test_account, self.test_container,
-                              row['name']]),
-             '_index': self.test_index,
-             '_type': metadata_sync.MetadataSync.DOC_TYPE
-            } for row in rows]
+        expected_delete_ops = [{
+            '_op_type': 'delete',
+            '_id': '/'.join([self.test_account, self.test_container,
+                             row['name']]),
+            '_index': self.test_index,
+            '_type': metadata_sync.MetadataSync.DOC_TYPE
+        } for row in rows]
         helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
                                                   expected_delete_ops,
                                                   raise_on_error=False,
@@ -188,23 +193,76 @@ class TestMetadataSync(unittest.TestCase):
     @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
     def test_handle_delete_skip_404(self, helpers_mock):
         rows = [{'name': 'row %d' % i, 'deleted': True} for i in range(0, 10)]
-        helpers_mock.bulk.return_value = (0,
-                                          [{'delete': {'exception': 'not found',
-                                                       'status': 404,
-                                                       'found': False}}])
+        helpers_mock.bulk.return_value = (0, [{
+            'delete': {'exception': 'not found',
+                       'status': 404,
+                       'found': False}}])
 
         self.sync.handle(rows)
-        expected_delete_ops = [
-            {'_op_type': 'delete',
-             '_id': '/'.join([self.test_account, self.test_container,
-                              row['name']]),
-             '_index': self.test_index,
-             '_type': metadata_sync.MetadataSync.DOC_TYPE
-            } for row in rows]
+        expected_delete_ops = [{
+            '_op_type': 'delete',
+            '_id': '/'.join([self.test_account, self.test_container,
+                             row['name']]),
+            '_index': self.test_index,
+            '_type': metadata_sync.MetadataSync.DOC_TYPE
+        } for row in rows]
         helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
                                                   expected_delete_ops,
                                                   raise_on_error=False,
                                                   raise_on_exception=False)
+
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_handle_update_and_new_docs(self, helpers_mock):
+        def fake_object_meta(account, container, key, headers={}):
+            object_id = int(key.split('_')[1])
+            x_timestamp = 1000000 - object_id % 2
+            return {'content-length': 42,
+                    'content-type': 'application/x-fake',
+                    'last-modified': email.utils.formatdate(x_timestamp),
+                    'x-timestamp': x_timestamp}
+
+        rows = [{'name': 'object_%d' % i,
+                 'deleted': False,
+                 'created_at': 1000000} for i in range(0, 10)]
+        es_docs = {'docs': [{
+            '_id': '%s/%s/object_%d' % (
+                self.test_account, self.test_container, i),
+            # Elasticsearch uses milliseconds
+            '_source': {'x-timestamp': 1000000 * 1000 - i % 2},
+            'found': True} for i in range(0, 10)]}
+        self.sync._es_conn = mock.Mock()
+        self.sync._es_conn.mget.return_value = es_docs
+        self.swift_mock.get_object_metadata.side_effect = fake_object_meta
+        helpers_mock.bulk.return_value = (None, [])
+
+        self.sync.handle(rows)
+
+        expected_ops = [{
+            '_op_type': 'index',
+            '_index': self.test_index,
+            '_type': metadata_sync.MetadataSync.DOC_TYPE,
+            '_id': '%s/%s/object_%d' % (
+                self.test_account, self.test_container, i),
+            '_source': {
+                'content-length': 42,
+                'content-type': 'application/x-fake',
+                'last-modified': 999999,
+                'x-swift-account': self.test_account,
+                'x-swift-container': self.test_container,
+                'x-swift-object': 'object_%d' % i,
+                'x-timestamp': 999999*1000
+            }
+        } for i in range(1, 10, 2)]
+        helpers_mock.bulk.assert_called_once_with(
+            self.sync._es_conn, expected_ops, raise_on_error=False,
+            raise_on_exception=False)
+        self.sync._es_conn.mget.assert_called_once_with(
+            body={'ids': ['%s/%s/object_%d' % (
+                    self.test_account, self.test_container, i)
+                    for i in range(0, 10)]},
+            index=self.test_index,
+            refresh=True,
+            _source=['x-timestamp'])
 
     @mock.patch('container_crawler.base_sync.InternalClient')
     @mock.patch(
@@ -215,8 +273,8 @@ class TestMetadataSync(unittest.TestCase):
         full_mapping = metadata_sync.MetadataSync.DOC_MAPPING
         swift_type = metadata_sync.MetadataSync.DOC_TYPE
 
-        # List of tuples of mappings to test: the mapping returned by ES and the
-        # mapping we expect to submit to the put_mapping call.
+        # List of tuples of mappings to test: the mapping returned by ES and
+        # the mapping we expect to submit to the put_mapping call.
         test_mappings = [
             ({self.test_index: {"mappings": {}}}, full_mapping),
             ({self.test_index: {"mappings": {"bogus_type": full_mapping}}},
@@ -248,7 +306,7 @@ class TestMetadataSync(unittest.TestCase):
             index_conn.get_mapping.return_value = return_mapping
             es_mock.return_value = es_conn
             index_mock.return_value = index_conn
-            sync = metadata_sync.MetadataSync(self.status_dir, self.sync_conf)
+            metadata_sync.MetadataSync(self.status_dir, self.sync_conf)
 
             if expected_put_mapping:
                 index_conn.put_mapping.assert_called_once_with(
