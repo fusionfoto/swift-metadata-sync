@@ -144,6 +144,68 @@ class TestMetadataSync(unittest.TestCase):
         self.assertEqual(1, status['old_id']['last_row'])
         self.assertEqual(self.test_index, status['old_id']['index'])
 
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_handle_delete(self, helpers_mock):
+        rows = [{'name': 'row %d' % i, 'deleted': True} for i in range(0, 10)]
+        helpers_mock.bulk.return_value = (None, [])
+
+        self.sync.handle(rows)
+        expected_delete_ops = [
+            {'_op_type': 'delete',
+             '_id': '/'.join([self.test_account, self.test_container,
+                              row['name']]),
+             '_index': self.test_index,
+             '_type': metadata_sync.MetadataSync.DOC_TYPE
+            } for row in rows]
+        helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
+                                                  expected_delete_ops,
+                                                  raise_on_error=False,
+                                                  raise_on_exception=False)
+
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_handle_delete_errors(self, helpers_mock):
+        rows = [{'name': 'row %d' % i, 'deleted': True} for i in range(0, 10)]
+        helpers_mock.bulk.return_value = (0,
+                                          [{'delete': {'exception': 'blow up!',
+                                                       'status': 500}},
+                                           {'delete': {'_id': 'fake doc id',
+                                                       'status': 500}}])
+
+        with self.assertRaises(RuntimeError):
+            self.sync.handle(rows)
+        expected_delete_ops = [
+            {'_op_type': 'delete',
+             '_id': '/'.join([self.test_account, self.test_container,
+                              row['name']]),
+             '_index': self.test_index,
+             '_type': metadata_sync.MetadataSync.DOC_TYPE
+            } for row in rows]
+        helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
+                                                  expected_delete_ops,
+                                                  raise_on_error=False,
+                                                  raise_on_exception=False)
+
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_handle_delete_skip_404(self, helpers_mock):
+        rows = [{'name': 'row %d' % i, 'deleted': True} for i in range(0, 10)]
+        helpers_mock.bulk.return_value = (0,
+                                          [{'delete': {'exception': 'not found',
+                                                       'status': 404,
+                                                       'found': False}}])
+
+        self.sync.handle(rows)
+        expected_delete_ops = [
+            {'_op_type': 'delete',
+             '_id': '/'.join([self.test_account, self.test_container,
+                              row['name']]),
+             '_index': self.test_index,
+             '_type': metadata_sync.MetadataSync.DOC_TYPE
+            } for row in rows]
+        helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
+                                                  expected_delete_ops,
+                                                  raise_on_error=False,
+                                                  raise_on_exception=False)
+
     @mock.patch('container_crawler.base_sync.InternalClient')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
