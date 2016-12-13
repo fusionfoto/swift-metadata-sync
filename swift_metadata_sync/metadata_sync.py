@@ -74,6 +74,7 @@ class MetadataSync(BaseSync):
             return
 
     def handle(self, rows):
+        self.logger.debug("Handling rows: %s" % repr(rows))
         if not rows:
             return []
         errors = []
@@ -95,6 +96,7 @@ class MetadataSync(BaseSync):
             self._check_errors(errors)
             return
 
+        self.logger.debug("multiple get IDs: %s" % repr(mget_ids))
         stale_ids, mget_errors = self._get_stale_ids(rows, mget_ids)
         errors += mget_errors
         update_ops = [self._create_index_op(doc_id) for doc_id in stale_ids]
@@ -104,6 +106,7 @@ class MetadataSync(BaseSync):
                 raise_on_error=False,
                 raise_on_exception=False
         )
+        self.logger.debug("Index operations: %s" % repr(update_ops))
 
         for op in update_failures:
             op_info = op['index']
@@ -118,7 +121,7 @@ class MetadataSync(BaseSync):
             return
 
         for error in errors:
-            self.logger.error(error)
+            self.logger.error(repr(error))
         raise RuntimeError('Failed to process some entries')
 
     def _bulk_delete(self, ops):
@@ -165,6 +168,7 @@ class MetadataSync(BaseSync):
                     'x-timestamp', 0):
                 stale_ids.append(doc['_id'])
                 continue
+        self.logger.debug("Stale IDs: %s" % repr(stale_ids))
         return stale_ids, errors
 
     def _create_index_op(self, doc_id):
