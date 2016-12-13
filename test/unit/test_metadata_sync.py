@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import email
 import json
 import mock
@@ -314,3 +316,9 @@ class TestMetadataSync(unittest.TestCase):
                     body={"properties": expected_put_mapping})
             else:
                 index_conn.put_mapping.assert_not_called()
+
+    def test_unicode_document_id(self):
+        row = {'name': 'monkey-\xf0\x9f\x90\xb5'}
+        doc_id = self.sync._get_document_id(row)
+        self.assertEqual(u'/'.join(
+            [self.test_account, self.test_container, u'monkey-🐵']), doc_id)

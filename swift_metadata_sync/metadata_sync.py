@@ -240,4 +240,5 @@ class MetadataSync(BaseSync):
         return doc['error']['root_cause'][0]['reason']
 
     def _get_document_id(self, row):
-        return '%s/%s/%s' % (self._account, self._container, row['name'])
+        return u'%s/%s/%s' % (self._account, self._container,
+                              row['name'].decode('utf-8'))
