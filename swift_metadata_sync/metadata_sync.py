@@ -220,8 +220,9 @@ class MetadataSync(BaseSync):
         es_doc['x-swift-container'] = container
 
         user_meta_keys = dict(
-            [(k.split(MetadataSync.USER_META_PREFIX, 1)[1], v)
-             for k, v in es_doc.items()
+            [(k.split(MetadataSync.USER_META_PREFIX, 1)[1].decode('utf-8'),
+              v.decode('utf-8'))
+             for k, v in meta.items()
              if k.startswith(MetadataSync.USER_META_PREFIX)])
         es_doc.update(user_meta_keys)
         for field in MetadataSync.DOC_MAPPING.keys():

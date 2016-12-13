@@ -221,7 +221,8 @@ class TestMetadataSync(unittest.TestCase):
             return {'content-length': 42,
                     'content-type': 'application/x-fake',
                     'last-modified': email.utils.formatdate(x_timestamp),
-                    'x-timestamp': x_timestamp}
+                    'x-timestamp': x_timestamp,
+                    'x-object-meta-foo': 'bar'}
 
         rows = [{'name': 'object_%d' % i,
                  'deleted': False,
@@ -252,7 +253,8 @@ class TestMetadataSync(unittest.TestCase):
                 'x-swift-account': self.test_account,
                 'x-swift-container': self.test_container,
                 'x-swift-object': 'object_%d' % i,
-                'x-timestamp': 999999*1000
+                'x-timestamp': 999999*1000,
+                'foo': 'bar'
             }
         } for i in range(1, 10, 2)]
         helpers_mock.bulk.assert_called_once_with(
@@ -262,6 +264,57 @@ class TestMetadataSync(unittest.TestCase):
             body={'ids': ['%s/%s/object_%d' % (
                     self.test_account, self.test_container, i)
                     for i in range(0, 10)]},
+            index=self.test_index,
+            refresh=True,
+            _source=['x-timestamp'])
+
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_handle_unicode_meta(self, helpers_mock):
+        def fake_object_meta(account, container, key, headers={}):
+            return {'content-length': 42,
+                    'content-type': 'application/x-fake',
+                    'last-modified': email.utils.formatdate(0),
+                    'x-timestamp': 0,
+                    'x-object-meta-\xf0\x9f\x90\xb5': '\xf0\x9f\x91\x8d'}
+
+        rows = [{'name': 'object',
+                 'deleted': False,
+                 'created_at': 1000000}]
+        es_docs = {'docs': [{'found': False,
+                             '_id': '/'.join([self.test_account,
+                                              self.test_container,
+                                              'object'])}
+        ]}
+        self.sync._es_conn = mock.Mock()
+        self.sync._es_conn.mget.return_value = es_docs
+        self.swift_mock.get_object_metadata.side_effect = fake_object_meta
+        helpers_mock.bulk.return_value = (None, [])
+
+        self.sync.handle(rows)
+
+        expected_ops = [{
+            '_op_type': 'index',
+            '_index': self.test_index,
+            '_type': metadata_sync.MetadataSync.DOC_TYPE,
+            '_id': '%s/%s/object' % (
+                self.test_account, self.test_container),
+            '_source': {
+                'content-length': 42,
+                'content-type': 'application/x-fake',
+                'last-modified': 0,
+                'x-swift-account': self.test_account,
+                'x-swift-container': self.test_container,
+                'x-swift-object': 'object',
+                'x-timestamp': 0,
+                u'🐵': u'👍'
+            }
+        }]
+        helpers_mock.bulk.assert_called_once_with(
+            self.sync._es_conn, expected_ops, raise_on_error=False,
+            raise_on_exception=False)
+        self.sync._es_conn.mget.assert_called_once_with(
+            body={'ids': ['%s/%s/object' % (
+                    self.test_account, self.test_container)]},
             index=self.test_index,
             refresh=True,
             _source=['x-timestamp'])
