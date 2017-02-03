@@ -249,7 +249,7 @@ class TestMetadataSync(unittest.TestCase):
             '_source': {
                 'content-length': 42,
                 'content-type': 'application/x-fake',
-                'last-modified': 999999,
+                'last-modified': 999999*1000,
                 'x-swift-account': self.test_account,
                 'x-swift-container': self.test_container,
                 'x-swift-object': 'object_%d' % i,

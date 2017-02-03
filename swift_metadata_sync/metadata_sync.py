@@ -213,7 +213,7 @@ class MetadataSync(BaseSync):
         es_doc['x-timestamp'] = int(float(meta['x-timestamp'])*1000)
         # Convert Last-Modified header into a millis since epoch date
         ts = email.utils.mktime_tz(
-            email.utils.parsedate_tz(meta['last-modified']))
+            email.utils.parsedate_tz(meta['last-modified'])) * 1000
         es_doc['last-modified'] = ts
         es_doc['x-swift-object'] = key
         es_doc['x-swift-account'] = account
