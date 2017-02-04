@@ -113,7 +113,8 @@ class MetadataSync(BaseSync):
             if 'exception' in op_info:
                 errors.append(op_info['exception'])
             else:
-                errors.append(str(op_info['status']))
+                errors.append("%s: %s" % (
+                    op_info['_id'], self._extract_error(op_info)))
         self._check_errors(errors)
 
     def _check_errors(self, errors):
@@ -121,7 +122,7 @@ class MetadataSync(BaseSync):
             return
 
         for error in errors:
-            self.logger.error(repr(error))
+            self.logger.error(str(error))
         raise RuntimeError('Failed to process some entries')
 
     def _bulk_delete(self, ops):
@@ -140,7 +141,7 @@ class MetadataSync(BaseSync):
                 errors.append(op_info['exception'])
             else:
                 errors.append("%s: %s" % (op_info['_id'],
-                                          str(op_info['status'])))
+                                          self._extract_error(op_info)))
         return errors
 
     def _get_stale_ids(self, rows, bulk_get_ids):
@@ -241,8 +242,15 @@ class MetadataSync(BaseSync):
         return meta
 
     @staticmethod
-    def _extract_error(doc):
-        return doc['error']['root_cause'][0]['reason']
+    def _extract_error(err_info):
+        if 'error' not in err_info or 'root_cause' not in err_info['error']:
+            return str(err_info['status'])
+
+        err = err_info['error']['root_cause']
+        try:
+            return '%s: %s' % (err, err_info['error']['caused_by']['reason'])
+        except KeyError:
+            return err
 
     def _get_document_id(self, row):
         return u'%s/%s/%s' % (self._account, self._container,

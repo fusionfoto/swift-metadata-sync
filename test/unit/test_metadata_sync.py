@@ -284,7 +284,7 @@ class TestMetadataSync(unittest.TestCase):
                              '_id': '/'.join([self.test_account,
                                               self.test_container,
                                               'object'])}
-        ]}
+                            ]}
         self.sync._es_conn = mock.Mock()
         self.sync._es_conn.mget.return_value = es_docs
         self.swift_mock.get_object_metadata.side_effect = fake_object_meta
@@ -375,3 +375,76 @@ class TestMetadataSync(unittest.TestCase):
         doc_id = self.sync._get_document_id(row)
         self.assertEqual(u'/'.join(
             [self.test_account, self.test_container, u'monkey-🐵']), doc_id)
+
+    # For delete and index failures, we should extract the reason if
+    # possible or return the status if not possible.
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_delete_errors(self, helpers_mock):
+        rows = [{'name': 'object_%d' % i,
+                 'deleted': True,
+                 'created_at': 1000000} for i in range(0, 10)]
+        es_docs = {'docs': [{
+            '_id': '%s/%s/object_%d' % (
+                self.test_account, self.test_container, i),
+            '_source': {'x-timestamp': 1000000 * 1000 - i % 2},
+            'found': True} for i in range(0, 10)]}
+        self.sync._es_conn = mock.Mock()
+        self.sync._es_conn.mget.return_value = es_docs
+        helpers_mock.bulk.return_value = (None, [
+            {'delete': {'status': 400, '_id': 'object_0'}},
+            {'delete': {'status': 400, '_id': 'object_1',
+             'error': {'root_cause': 'delete failure reason'}}},
+            {'delete': {'status': 400, '_id': 'object_2',
+                        'error': {
+                            'root_cause': 'delete failed',
+                            'caused_by': {'reason': 'more details'}}
+                        }}
+        ])
+
+        self.sync.logger = mock.Mock()
+        with self.assertRaises(RuntimeError):
+            self.sync.handle(rows)
+
+        expected_error_calls = [
+            mock.call("object_0: 400"),
+            mock.call("object_1: delete failure reason"),
+            mock.call("object_2: delete failed: more details")
+        ]
+        self.sync.logger.error.assert_has_calls(expected_error_calls)
+
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_index_errors(self, helpers_mock):
+        rows = [{'name': 'object_%d' % i,
+                 'deleted': False,
+                 'created_at': 1000000} for i in range(0, 10)]
+        es_docs = {'docs': [{
+            '_id': '%s/%s/object_%d' % (
+                self.test_account, self.test_container, i),
+            'found': False} for i in range(0, 10)]}
+        self.sync._es_conn = mock.Mock()
+        self.sync._es_conn.mget.return_value = es_docs
+        helpers_mock.bulk.return_value = (None, [
+            {'index': {'status': 400, '_id': 'object_0'}},
+            {'index': {'status': 400, '_id': 'object_1',
+             'error': {'root_cause': 'index failure reason'}}},
+            {'index': {'status': 400, '_id': 'object_2',
+                       'error': {
+                            'root_cause': 'index failed',
+                            'caused_by': {'reason': 'more details'}}
+                       }}
+        ])
+        self.swift_mock.get_object_metadata.return_value = {
+            'x-timestamp': 1000000,
+            'last-modified': email.utils.formatdate(1000000)
+        }
+
+        self.sync.logger = mock.Mock()
+        with self.assertRaises(RuntimeError):
+            self.sync.handle(rows)
+
+        expected_error_calls = [
+            mock.call("object_0: 400"),
+            mock.call("object_1: index failure reason"),
+            mock.call("object_2: index failed: more details")
+        ]
+        self.sync.logger.error.assert_has_calls(expected_error_calls)
