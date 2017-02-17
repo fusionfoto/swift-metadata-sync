@@ -13,7 +13,7 @@ from container_crawler.base_sync import BaseSync
 class MetadataSync(BaseSync):
     DOC_TYPE = 'object'
     DOC_MAPPING = {
-        "content-length": {"type": "integer"},
+        "content-length": {"type": "long"},
         "content-type": {"type": "string"},
         "etag": {"type": "string", "index": "not_analyzed"},
         "last-modified": {"type": "date"},
