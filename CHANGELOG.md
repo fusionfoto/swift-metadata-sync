@@ -1,3 +1,10 @@
+## 0.0.4 (2017-02-28)
+
+Bug fixes:
+
+    - use long for the object size; otherwise, we are limited to reporting
+      objects only up to 2GB
+
 ## 0.0.3 (2017-02-06)
 
 Bug fixes:
