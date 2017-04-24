@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import traceback
 
 from container_crawler import ContainerCrawler
@@ -47,6 +48,10 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if not os.path.exists(args.config):
+        print 'Configuration file does not exist'
+        exit(0)
+
     conf = load_config(args.config)
     setup_logger(console=args.console, level=args.log_level.upper(),
                  log_file=conf.get('log_file'))
