@@ -6,7 +6,7 @@ with open('requirements.txt') as reqs_file:
     reqs = [req.strip() for req in reqs_file]
 
 setup(name='swift-metadata-sync',
-      version='0.0.4',
+      version='0.0.5',
       author='SwiftStack',
       test_suite='nose.collector',
       url='https://github.com/swiftstack/swift-metadata-sync',

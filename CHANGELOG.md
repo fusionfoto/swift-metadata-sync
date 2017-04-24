@@ -1,3 +1,10 @@
+## 0.0.5 (2017-04-24)
+
+Bug fixes:
+
+    - exit with an error code of 0 and a message if the configuration file does
+      not exist. This may happen on a fresh installation of the daemon.
+
 ## 0.0.4 (2017-02-28)
 
 Bug fixes:
