@@ -1,3 +1,9 @@
+## 0.0.6 (2017-05-05)
+
+Improvements:
+
+    - change the handle() to conform to the new API in ContainerCrawler
+
 ## 0.0.5 (2017-04-24)
 
 Bug fixes:
