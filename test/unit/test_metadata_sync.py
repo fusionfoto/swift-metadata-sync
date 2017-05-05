@@ -40,10 +40,7 @@ class TestMetadataSync(unittest.TestCase):
 
     @mock.patch(
         'swift_metadata_sync.metadata_sync.MetadataSync._verify_mapping')
-    @mock.patch('container_crawler.base_sync.InternalClient')
-    def setUp(self, mock_client, mock_verify_mapping):
-        self.swift_mock = mock.Mock()
-        mock_client.return_value = self.swift_mock
+    def setUp(self, mock_verify_mapping):
         self.status_dir = '/status/dir'
         self.es_hosts = 'es.example.com'
         self.test_index = 'test_index'
@@ -156,7 +153,7 @@ class TestMetadataSync(unittest.TestCase):
         rows = [{'name': 'row %d' % i, 'deleted': True} for i in range(0, 10)]
         helpers_mock.bulk.return_value = (None, [])
 
-        self.sync.handle(rows)
+        self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
             '_op_type': 'delete',
             '_id': '/'.join([self.test_account, self.test_container,
@@ -179,7 +176,7 @@ class TestMetadataSync(unittest.TestCase):
                                                        'status': 500}}])
 
         with self.assertRaises(RuntimeError):
-            self.sync.handle(rows)
+            self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
             '_op_type': 'delete',
             '_id': '/'.join([self.test_account, self.test_container,
@@ -200,7 +197,7 @@ class TestMetadataSync(unittest.TestCase):
                        'status': 404,
                        'found': False}}])
 
-        self.sync.handle(rows)
+        self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
             '_op_type': 'delete',
             '_id': '/'.join([self.test_account, self.test_container,
@@ -235,10 +232,11 @@ class TestMetadataSync(unittest.TestCase):
             'found': True} for i in range(0, 10)]}
         self.sync._es_conn = mock.Mock()
         self.sync._es_conn.mget.return_value = es_docs
-        self.swift_mock.get_object_metadata.side_effect = fake_object_meta
+        swift_mock = mock.Mock()
+        swift_mock.get_object_metadata.side_effect = fake_object_meta
         helpers_mock.bulk.return_value = (None, [])
 
-        self.sync.handle(rows)
+        self.sync.handle(rows, swift_mock)
 
         expected_ops = [{
             '_op_type': 'index',
@@ -287,10 +285,11 @@ class TestMetadataSync(unittest.TestCase):
                             ]}
         self.sync._es_conn = mock.Mock()
         self.sync._es_conn.mget.return_value = es_docs
-        self.swift_mock.get_object_metadata.side_effect = fake_object_meta
+        swift_mock = mock.Mock()
+        swift_mock.get_object_metadata.side_effect = fake_object_meta
         helpers_mock.bulk.return_value = (None, [])
 
-        self.sync.handle(rows)
+        self.sync.handle(rows, swift_mock)
 
         expected_ops = [{
             '_op_type': 'index',
@@ -319,12 +318,11 @@ class TestMetadataSync(unittest.TestCase):
             refresh=True,
             _source=['x-timestamp'])
 
-    @mock.patch('container_crawler.base_sync.InternalClient')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
-    def test_verify_mapping(self, es_mock, index_mock, mock_ic_client):
+    def test_verify_mapping(self, es_mock, index_mock):
         full_mapping = metadata_sync.MetadataSync.DOC_MAPPING
         swift_type = metadata_sync.MetadataSync.DOC_TYPE
 
@@ -403,7 +401,7 @@ class TestMetadataSync(unittest.TestCase):
 
         self.sync.logger = mock.Mock()
         with self.assertRaises(RuntimeError):
-            self.sync.handle(rows)
+            self.sync.handle(rows, mock.Mock())
 
         expected_error_calls = [
             mock.call("object_0: 400"),
@@ -433,14 +431,15 @@ class TestMetadataSync(unittest.TestCase):
                             'caused_by': {'reason': 'more details'}}
                        }}
         ])
-        self.swift_mock.get_object_metadata.return_value = {
+        swift_mock = mock.Mock()
+        swift_mock.get_object_metadata.return_value = {
             'x-timestamp': 1000000,
             'last-modified': email.utils.formatdate(1000000)
         }
 
         self.sync.logger = mock.Mock()
         with self.assertRaises(RuntimeError):
-            self.sync.handle(rows)
+            self.sync.handle(rows, swift_mock)
 
         expected_error_calls = [
             mock.call("object_0: 400"),

@@ -73,7 +73,7 @@ class MetadataSync(BaseSync):
             f.truncate()
             return
 
-    def handle(self, rows):
+    def handle(self, rows, internal_client):
         self.logger.debug("Handling rows: %s" % repr(rows))
         if not rows:
             return []
@@ -99,7 +99,8 @@ class MetadataSync(BaseSync):
         self.logger.debug("multiple get IDs: %s" % repr(mget_ids))
         stale_ids, mget_errors = self._get_stale_ids(rows, mget_ids)
         errors += mget_errors
-        update_ops = [self._create_index_op(doc_id) for doc_id in stale_ids]
+        update_ops = [self._create_index_op(doc_id, internal_client)
+                      for doc_id in stale_ids]
         _, update_failures = elasticsearch.helpers.bulk(
                 self._es_conn,
                 update_ops,
@@ -172,11 +173,11 @@ class MetadataSync(BaseSync):
         self.logger.debug("Stale IDs: %s" % repr(stale_ids))
         return stale_ids, errors
 
-    def _create_index_op(self, doc_id):
+    def _create_index_op(self, doc_id, internal_client):
         account, container, key = doc_id.split('/', 2)
         swift_hdrs = {'X-Newest': True}
-        meta = self._swift_client.get_object_metadata(account, container, key,
-                                                      headers=swift_hdrs)
+        meta = internal_client.get_object_metadata(account, container, key,
+                                                   headers=swift_hdrs)
         return {'_op_type': 'index',
                 '_index': self._index,
                 '_type': self.DOC_TYPE,
