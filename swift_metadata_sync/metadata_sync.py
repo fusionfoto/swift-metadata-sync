@@ -1,6 +1,7 @@
 import elasticsearch
 import elasticsearch.helpers
 import email.utils
+import hashlib
 import json
 import logging
 import os
@@ -80,7 +81,7 @@ class MetadataSync(BaseSync):
         errors = []
 
         bulk_delete_ops = []
-        mget_ids = []
+        mget_map = {}
         for row in rows:
             if row['deleted']:
                 bulk_delete_ops.append({'_op_type': 'delete',
@@ -88,19 +89,19 @@ class MetadataSync(BaseSync):
                                         '_index': self._index,
                                         '_type': self.DOC_TYPE})
                 continue
-            mget_ids.append(self._get_document_id(row))
+            mget_map[self._get_document_id(row)] = row
 
         if bulk_delete_ops:
             errors = self._bulk_delete(bulk_delete_ops)
-        if not mget_ids:
+        if not mget_map:
             self._check_errors(errors)
             return
 
-        self.logger.debug("multiple get IDs: %s" % repr(mget_ids))
-        stale_ids, mget_errors = self._get_stale_ids(rows, mget_ids)
+        self.logger.debug("multiple get map: %s" % repr(mget_map))
+        stale_rows, mget_errors = self._get_stale_rows(mget_map)
         errors += mget_errors
-        update_ops = [self._create_index_op(doc_id, internal_client)
-                      for doc_id in stale_ids]
+        update_ops = [self._create_index_op(doc_id, row, internal_client)
+                      for doc_id, row in stale_rows]
         _, update_failures = elasticsearch.helpers.bulk(
                 self._es_conn,
                 update_ops,
@@ -145,43 +146,42 @@ class MetadataSync(BaseSync):
                                           self._extract_error(op_info)))
         return errors
 
-    def _get_stale_ids(self, rows, bulk_get_ids):
+    def _get_stale_rows(self, mget_map):
         errors = []
-        stale_ids = []
-        results = self._es_conn.mget(body={'ids': bulk_get_ids},
+        stale_rows = []
+        results = self._es_conn.mget(body={'ids': mget_map.keys()},
                                      index=self._index,
                                      refresh=True,
                                      _source=['x-timestamp'])
         docs = results['docs']
-        get_index = 0
-        for row in rows:
-            if row['deleted']:
+        for doc in docs:
+            row = mget_map.get(doc['_id'])
+            if not row:
+                errors.append("Unknown row for ID %s" % doc['_id'])
                 continue
-            object_date = self._get_last_modified_date(row)
-            doc = docs[get_index]
-            get_index += 1
             if 'error' in doc:
                 errors.append("Failed to query %s: %s" % (
                               doc['_id'], str(doc['error'])))
                 continue
+            object_date = self._get_last_modified_date(row)
             # ElasticSearch only supports milliseconds
             object_ts = int(float(object_date)*1000)
             if not doc['found'] or object_ts > doc['_source'].get(
                     'x-timestamp', 0):
-                stale_ids.append(doc['_id'])
+                stale_rows.append((doc['_id'], row))
                 continue
-        self.logger.debug("Stale IDs: %s" % repr(stale_ids))
-        return stale_ids, errors
+        self.logger.debug("Stale rows: %s" % repr(stale_rows))
+        return stale_rows, errors
 
-    def _create_index_op(self, doc_id, internal_client):
-        account, container, key = doc_id.split('/', 2)
+    def _create_index_op(self, doc_id, row, internal_client):
         swift_hdrs = {'X-Newest': True}
-        meta = internal_client.get_object_metadata(account, container, key,
-                                                   headers=swift_hdrs)
+        meta = internal_client.get_object_metadata(
+            self._account, self._container, row['name'], headers=swift_hdrs)
         return {'_op_type': 'index',
                 '_index': self._index,
                 '_type': self.DOC_TYPE,
-                '_source': self._create_es_doc(meta, account, container, key),
+                '_source': self._create_es_doc(meta, self._account,
+                                               self._container, row['name']),
                 '_id': doc_id}
 
     """
@@ -254,5 +254,6 @@ class MetadataSync(BaseSync):
             return err
 
     def _get_document_id(self, row):
-        return u'%s/%s/%s' % (self._account, self._container,
-                              row['name'].decode('utf-8'))
+        return hashlib.sha256(
+            '/'.join([self._account, self._container, row['name']])
+        ).hexdigest()

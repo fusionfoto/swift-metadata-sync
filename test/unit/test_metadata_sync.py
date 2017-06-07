@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import email
+import hashlib
 import json
 import mock
 import unittest
@@ -52,6 +53,11 @@ class TestMetadataSync(unittest.TestCase):
                           'container': self.test_container}
         self.sync = metadata_sync.MetadataSync(self.status_dir,
                                                self.sync_conf)
+
+    @staticmethod
+    def compute_id(account, container, obj):
+        return hashlib.sha256('/'.join([account, container,
+                                        obj.encode('utf-8')])).hexdigest()
 
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_get_last_row_nonexistent(self, exists_mock):
@@ -156,8 +162,8 @@ class TestMetadataSync(unittest.TestCase):
         self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
             '_op_type': 'delete',
-            '_id': '/'.join([self.test_account, self.test_container,
-                             row['name']]),
+            '_id': self.compute_id(
+                self.test_account, self.test_container, row['name']),
             '_index': self.test_index,
             '_type': metadata_sync.MetadataSync.DOC_TYPE
         } for row in rows]
@@ -179,8 +185,8 @@ class TestMetadataSync(unittest.TestCase):
             self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
             '_op_type': 'delete',
-            '_id': '/'.join([self.test_account, self.test_container,
-                             row['name']]),
+            '_id': self.compute_id(
+                self.test_account, self.test_container, row['name']),
             '_index': self.test_index,
             '_type': metadata_sync.MetadataSync.DOC_TYPE
         } for row in rows]
@@ -200,8 +206,8 @@ class TestMetadataSync(unittest.TestCase):
         self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
             '_op_type': 'delete',
-            '_id': '/'.join([self.test_account, self.test_container,
-                             row['name']]),
+            '_id': self.compute_id(
+                self.test_account, self.test_container, row['name']),
             '_index': self.test_index,
             '_type': metadata_sync.MetadataSync.DOC_TYPE
         } for row in rows]
@@ -223,13 +229,13 @@ class TestMetadataSync(unittest.TestCase):
 
         rows = [{'name': 'object_%d' % i,
                  'deleted': False,
-                 'created_at': 1000000} for i in range(0, 10)]
+                 'created_at': 1000000} for i in xrange(10)]
         es_docs = {'docs': [{
-            '_id': '%s/%s/object_%d' % (
-                self.test_account, self.test_container, i),
+            '_id': self.compute_id(
+                self.test_account, self.test_container, 'object_%d' % i),
             # Elasticsearch uses milliseconds
             '_source': {'x-timestamp': 1000000 * 1000 - i % 2},
-            'found': True} for i in range(0, 10)]}
+            'found': True} for i in xrange(10)]}
         self.sync._es_conn = mock.Mock()
         self.sync._es_conn.mget.return_value = es_docs
         swift_mock = mock.Mock()
@@ -242,8 +248,8 @@ class TestMetadataSync(unittest.TestCase):
             '_op_type': 'index',
             '_index': self.test_index,
             '_type': metadata_sync.MetadataSync.DOC_TYPE,
-            '_id': '%s/%s/object_%d' % (
-                self.test_account, self.test_container, i),
+            '_id': self.compute_id(
+                self.test_account, self.test_container, 'object_%d' % i),
             '_source': {
                 'content-length': 42,
                 'content-type': 'application/x-fake',
@@ -259,12 +265,17 @@ class TestMetadataSync(unittest.TestCase):
             self.sync._es_conn, expected_ops, raise_on_error=False,
             raise_on_exception=False)
         self.sync._es_conn.mget.assert_called_once_with(
-            body={'ids': ['%s/%s/object_%d' % (
-                    self.test_account, self.test_container, i)
-                    for i in range(0, 10)]},
+            body=mock.ANY,
             index=self.test_index,
             refresh=True,
             _source=['x-timestamp'])
+        call = self.sync._es_conn.mget.mock_calls[0]
+        self.assertIn('body', call[2])
+        self.assertIn('ids', call[2]['body'])
+        id_set = set([self.compute_id(
+                self.test_account, self.test_container, 'object_%d' % i)
+            for i in xrange(10)])
+        self.assertEqual(id_set, set(call[2]['body']['ids']))
 
     @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
     def test_handle_unicode_meta(self, helpers_mock):
@@ -279,9 +290,9 @@ class TestMetadataSync(unittest.TestCase):
                  'deleted': False,
                  'created_at': 1000000}]
         es_docs = {'docs': [{'found': False,
-                             '_id': '/'.join([self.test_account,
-                                              self.test_container,
-                                              'object'])}
+                             '_id': self.compute_id(self.test_account,
+                                                    self.test_container,
+                                                    'object')}
                             ]}
         self.sync._es_conn = mock.Mock()
         self.sync._es_conn.mget.return_value = es_docs
@@ -295,8 +306,8 @@ class TestMetadataSync(unittest.TestCase):
             '_op_type': 'index',
             '_index': self.test_index,
             '_type': metadata_sync.MetadataSync.DOC_TYPE,
-            '_id': '%s/%s/object' % (
-                self.test_account, self.test_container),
+            '_id': self.compute_id(
+                self.test_account, self.test_container, 'object'),
             '_source': {
                 'content-length': 42,
                 'content-type': 'application/x-fake',
@@ -312,8 +323,8 @@ class TestMetadataSync(unittest.TestCase):
             self.sync._es_conn, expected_ops, raise_on_error=False,
             raise_on_exception=False)
         self.sync._es_conn.mget.assert_called_once_with(
-            body={'ids': ['%s/%s/object' % (
-                    self.test_account, self.test_container)]},
+            body={'ids': [self.compute_id(
+                    self.test_account, self.test_container, 'object')]},
             index=self.test_index,
             refresh=True,
             _source=['x-timestamp'])
@@ -370,9 +381,10 @@ class TestMetadataSync(unittest.TestCase):
 
     def test_unicode_document_id(self):
         row = {'name': 'monkey-\xf0\x9f\x90\xb5'}
+        row['name'].decode('utf-8')
         doc_id = self.sync._get_document_id(row)
-        self.assertEqual(u'/'.join(
-            [self.test_account, self.test_container, u'monkey-🐵']), doc_id)
+        self.assertEqual(self.compute_id(
+            self.test_account, self.test_container, u'monkey-🐵'), doc_id)
 
     # For delete and index failures, we should extract the reason if
     # possible or return the status if not possible.
