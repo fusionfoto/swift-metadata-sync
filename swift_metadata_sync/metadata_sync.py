@@ -1,3 +1,4 @@
+from distutils.version import StrictVersion
 import elasticsearch
 import elasticsearch.helpers
 import email.utils
@@ -34,6 +35,8 @@ class MetadataSync(BaseSync):
         self.logger = logging.getLogger('swift-metadata-sync')
         es_hosts = settings['es_hosts']
         self._es_conn = elasticsearch.Elasticsearch(es_hosts)
+        self._server_version = StrictVersion(
+            self._es_conn.info()['version']['number'])
         self._index = settings['index']
         self._verify_mapping()
 
@@ -205,6 +208,13 @@ class MetadataSync(BaseSync):
         if missing_fields:
             new_mapping = dict([(k, v) for k, v in self.DOC_MAPPING.items()
                                 if k in missing_fields])
+            # Elasticsearch 5.x deprecated the "string" type. We convert the
+            # string fields into the appropriate 5.x types.
+            # TODO: Once we remove  support for the 2.x clusters, we should
+            # remove this code and create the new mappings for each field.
+            if self._server_version >= StrictVersion('5.0'):
+                new_mapping = dict([(k, self._update_string_mapping(v))
+                                    for k, v in new_mapping.items()])
             index_client.put_mapping(index=self._index, doc_type=self.DOC_TYPE,
                                      body={'properties': new_mapping})
 
@@ -252,6 +262,22 @@ class MetadataSync(BaseSync):
             return '%s: %s' % (err, err_info['error']['caused_by']['reason'])
         except KeyError:
             return err
+
+    @staticmethod
+    def _update_string_mapping(mapping):
+        if mapping['type'] != 'string':
+            return mapping
+        if 'index' in mapping and mapping['index'] == 'not_analyzed':
+            return {'type': 'keyword'}
+        # This creates a mapping that is both searchable as a text and keyword
+        # (the default  behavior in Elasticsearch for 2.x string types).
+        return {
+            'type': 'text',
+            'fields': {
+                'keyword': {
+                    'type': 'keyword'}
+            }
+        }
 
     def _get_document_id(self, row):
         return hashlib.sha256(

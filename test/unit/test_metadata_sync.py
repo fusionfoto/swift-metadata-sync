@@ -40,8 +40,10 @@ class TestMetadataSync(unittest.TestCase):
             self.closed = True
 
     @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    @mock.patch(
         'swift_metadata_sync.metadata_sync.MetadataSync._verify_mapping')
-    def setUp(self, mock_verify_mapping):
+    def setUp(self, mock_verify_mapping, mock_es):
         self.status_dir = '/status/dir'
         self.es_hosts = 'es.example.com'
         self.test_index = 'test_index'
@@ -51,6 +53,11 @@ class TestMetadataSync(unittest.TestCase):
                           'index': self.test_index,
                           'account': self.test_account,
                           'container': self.test_container}
+
+        self.es_mock = mock.Mock()
+        self.es_mock.info.return_value = {'version': {'number': '2.2.0'}}
+        mock_es.return_value = self.es_mock
+
         self.sync = metadata_sync.MetadataSync(self.status_dir,
                                                self.sync_conf)
 
@@ -366,6 +373,7 @@ class TestMetadataSync(unittest.TestCase):
 
         for return_mapping, expected_put_mapping in test_mappings:
             es_conn = mock.Mock()
+            es_conn.info.return_value = {'version': {'number': '2.2.0'}}
             index_conn = mock.Mock()
             index_conn.get_mapping.return_value = return_mapping
             es_mock.return_value = es_conn
@@ -378,6 +386,53 @@ class TestMetadataSync(unittest.TestCase):
                     body={"properties": expected_put_mapping})
             else:
                 index_conn.put_mapping.assert_not_called()
+
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    def test_verify_mapping_5x(self, es_mock, index_mock):
+        full_mapping = metadata_sync.MetadataSync.DOC_MAPPING
+        swift_type = metadata_sync.MetadataSync.DOC_TYPE
+
+        # Test that "string" mappings are converted to keyword or text or both.
+        current_mapping = dict([(k, v) for k, v in full_mapping.items()
+                                if v['type'] != 'string'])
+        text_and_keyword = {
+            'type': 'text',
+            'fields': {
+                'keyword': {
+                    'type': 'keyword'
+                }
+            }
+        }
+
+        expected_mapping = {
+            'content-type': text_and_keyword,
+            'etag': {'type': 'keyword'},
+            'x-object-manifest': text_and_keyword,
+            'x-swift-container': text_and_keyword,
+            'x-swift-account': text_and_keyword,
+            'x-swift-object': text_and_keyword,
+            'x-trans-id': {'type': 'keyword'}
+        }
+
+        es_conn = mock.Mock()
+        es_conn.info.return_value = {'version': {'number': '5.0'}}
+        index_conn = mock.Mock()
+        index_conn.get_mapping.return_value = {
+            self.test_index: {'mappings': {
+                swift_type: {'properties': current_mapping}
+                }
+            }
+        }
+        es_mock.return_value = es_conn
+        index_mock.return_value = index_conn
+        metadata_sync.MetadataSync(self.status_dir, self.sync_conf)
+
+        index_conn.put_mapping.assert_called_once_with(
+            index=self.test_index, doc_type=swift_type,
+            body={'properties': expected_mapping})
 
     def test_unicode_document_id(self):
         row = {'name': 'monkey-\xf0\x9f\x90\xb5'}
