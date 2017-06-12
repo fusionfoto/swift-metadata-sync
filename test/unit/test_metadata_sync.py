@@ -208,7 +208,7 @@ class TestMetadataSync(unittest.TestCase):
         helpers_mock.bulk.return_value = (0, [{
             'delete': {'exception': 'not found',
                        'status': 404,
-                       'found': False}}])
+                       'result': 'not_found'}}])
 
         self.sync.handle(rows, mock.Mock())
         expected_delete_ops = [{
