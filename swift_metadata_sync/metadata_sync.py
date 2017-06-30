@@ -281,5 +281,7 @@ class MetadataSync(BaseSync):
 
     def _get_document_id(self, row):
         return hashlib.sha256(
-            '/'.join([self._account, self._container, row['name']])
+            '/'.join([self._account.encode('utf-8'),
+                      self._container.encode('utf-8'),
+                      row['name']])
         ).hexdigest()

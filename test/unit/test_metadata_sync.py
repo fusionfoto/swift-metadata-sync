@@ -47,8 +47,8 @@ class TestMetadataSync(unittest.TestCase):
         self.status_dir = '/status/dir'
         self.es_hosts = 'es.example.com'
         self.test_index = 'test_index'
-        self.test_account = 'test_account'
-        self.test_container = 'test_container'
+        self.test_account = u'test_account'
+        self.test_container = u'test_container'
         self.sync_conf = {'es_hosts': self.es_hosts,
                           'index': self.test_index,
                           'account': self.test_account,
@@ -63,8 +63,9 @@ class TestMetadataSync(unittest.TestCase):
 
     @staticmethod
     def compute_id(account, container, obj):
-        return hashlib.sha256('/'.join([account, container,
-                                        obj.encode('utf-8')])).hexdigest()
+        args = [account, container, obj]
+        args = [x.encode('utf-8') if type(x) == unicode else x for x in args]
+        return hashlib.sha256('/'.join(args)).hexdigest()
 
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_get_last_row_nonexistent(self, exists_mock):
@@ -435,8 +436,7 @@ class TestMetadataSync(unittest.TestCase):
             body={'properties': expected_mapping})
 
     def test_unicode_document_id(self):
-        row = {'name': 'monkey-\xf0\x9f\x90\xb5'}
-        row['name'].decode('utf-8')
+        row = {'name': u'monkey-🐵'.encode('utf-8')}
         doc_id = self.sync._get_document_id(row)
         self.assertEqual(self.compute_id(
             self.test_account, self.test_container, u'monkey-🐵'), doc_id)
