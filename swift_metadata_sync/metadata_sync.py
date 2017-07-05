@@ -140,8 +140,12 @@ class MetadataSync(BaseSync):
 
         for op in delete_failures:
             op_info = op['delete']
-            if op_info['status'] == 404 and op_info['result'] == 'not_found':
-                continue
+            if op_info['status'] == 404:
+                if op_info.get('result') == 'not_found':
+                    continue
+                # < 5.x Elasticsearch versions do not return "result"
+                if op_info.get('found') == False:
+                    continue
             if 'exception' in op_info:
                 errors.append(op_info['exception'])
             else:
