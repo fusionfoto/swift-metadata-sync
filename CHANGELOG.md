@@ -1,3 +1,9 @@
+## 0.0.8 (2017-07-12)
+
+Bug fixes:
+
+    - properly handle unicode characters in object names.
+
 ## 0.0.7 (2017-06-12)
 
 Improvement:
