@@ -29,8 +29,8 @@ class MetadataSync(BaseSync):
     }
     USER_META_PREFIX = 'x-object-meta-'
 
-    def __init__(self, status_dir, settings):
-        super(MetadataSync, self).__init__(status_dir, settings)
+    def __init__(self, status_dir, settings, per_account=False):
+        super(MetadataSync, self).__init__(status_dir, settings, per_account)
 
         self.logger = logging.getLogger('swift-metadata-sync')
         es_hosts = settings['es_hosts']
