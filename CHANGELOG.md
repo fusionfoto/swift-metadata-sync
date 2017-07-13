@@ -1,3 +1,9 @@
+## 0.0.9 (2017-07-13)
+
+Bug fixes:
+
+    - change the constructor to work with the changes to the Container Crawler.
+
 ## 0.0.8 (2017-07-12)
 
 Bug fixes:
