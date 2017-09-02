@@ -197,8 +197,15 @@ class MetadataSync(BaseSync):
     """
     def _verify_mapping(self):
         index_client = elasticsearch.client.IndicesClient(self._es_conn)
-        mapping = index_client.get_mapping(index=self._index,
-                                           doc_type=self.DOC_TYPE)
+        try:
+            mapping = index_client.get_mapping(index=self._index,
+                                               doc_type=self.DOC_TYPE)
+        except elasticsearch.TransportError as e:
+            if e.status_code != 404:
+                raise
+            if e.error != 'type_missing_exception':
+                raise
+            mapping = {}
         if not mapping.get(self._index, None) or \
                 self.DOC_TYPE not in mapping[self._index]['mappings']:
             missing_fields = self.DOC_MAPPING.keys()
