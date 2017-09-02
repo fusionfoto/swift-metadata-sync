@@ -69,3 +69,25 @@ The daemons also record the database ID. If a drive fails and the database has
 to replicated from another Swift node, the daemon will also restart from the
 beginning. This ensures correctness, but means that updates may not propagate as
 quickly after drive failures.
+
+Testing it out
+--------------
+
+You can build a docker container with a Swift all-in-one and elasticsearch to
+try out metadata search. The container is defined in `test/container`. To build
+it, run: `docker build -t metadata-sync test/container` (this will tag the
+docker image as `metadata-sync`). Once the container is built, you can launch it
+as follows (assuming you're in the root directory of the swift-metadata-sync
+repository):
+``docker run -P -d -v `pwd`:/swift-metadata-sync metadata-sync``.
+
+This will create a container running in the background (`-d`) with three ports
+exposed (`-P`), which maps the code tree into the container at
+`/swift-metadata-sync`. `swift` is listening on port 8080 inside the container
+and elasticsearch is on 9200. To check the port mappings, use:
+`docker port <container-name>`.
+
+Once the container is running, you can use the Swift cluster as expected. The
+default mappings are configured in `test/container/swift-metadata-sync.json`. If
+you create the `es-test` container and an index named `es-test`, you should see
+the objects' metadata appear in elasticsearch.
