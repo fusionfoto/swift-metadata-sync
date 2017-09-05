@@ -188,7 +188,8 @@ class MetadataSync(BaseSync):
                 '_index': self._index,
                 '_type': self.DOC_TYPE,
                 '_source': self._create_es_doc(meta, self._account,
-                                               self._container, row['name']),
+                                               self._container,
+                                               row['name'].decode('utf-8')),
                 '_id': doc_id}
 
     """

@@ -337,6 +337,56 @@ class TestMetadataSync(unittest.TestCase):
             refresh=True,
             _source=['x-timestamp'])
 
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    def test_handle_unicode_object_name(self, helpers_mock):
+        def fake_object_meta(account, container, key, headers={}):
+            return {'content-length': 42,
+                    'content-type': 'application/x-fake',
+                    'last-modified': email.utils.formatdate(0),
+                    'x-timestamp': 0}
+
+        rows = [{'name': u'object°'.encode('utf-8'),
+                 'deleted': False,
+                 'created_at': 1000000}]
+        es_docs = {'docs': [{'found': False,
+                             '_id': self.compute_id(self.test_account,
+                                                    self.test_container,
+                                                    rows[0]['name'])}
+                            ]}
+        self.sync._es_conn = mock.Mock()
+        self.sync._es_conn.mget.return_value = es_docs
+        swift_mock = mock.Mock()
+        swift_mock.get_object_metadata.side_effect = fake_object_meta
+        helpers_mock.bulk.return_value = (None, [])
+
+        self.sync.handle(rows, swift_mock)
+
+        expected_ops = [{
+            '_op_type': 'index',
+            '_index': self.test_index,
+            '_type': metadata_sync.MetadataSync.DOC_TYPE,
+            '_id': self.compute_id(
+                self.test_account, self.test_container, rows[0]['name']),
+            '_source': {
+                'content-length': 42,
+                'content-type': 'application/x-fake',
+                'last-modified': 0,
+                'x-swift-account': self.test_account,
+                'x-swift-container': self.test_container,
+                'x-swift-object': rows[0]['name'].decode('utf-8'),
+                'x-timestamp': 0,
+            }
+        }]
+        helpers_mock.bulk.assert_called_once_with(
+            self.sync._es_conn, expected_ops, raise_on_error=False,
+            raise_on_exception=False)
+        self.sync._es_conn.mget.assert_called_once_with(
+            body={'ids': [self.compute_id(
+                    self.test_account, self.test_container, rows[0]['name'])]},
+            index=self.test_index,
+            refresh=True,
+            _source=['x-timestamp'])
+
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
     @mock.patch(
