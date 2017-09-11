@@ -1,3 +1,14 @@
+## 0.0.10 (2017-09-11)
+
+Bug fixes:
+
+    - Fix an issue where objects with unicode names cannot be indexed if
+      simple-json is not installed (as the UTF-8 encoded strings may be
+      attempted to be encoded one more time).
+    - Handles a missing type error gracefully, which may occur if the index was
+      created without a mapping. In that case, the "object" document type is
+      created with the default mappings.
+
 ## 0.0.9 (2017-07-13)
 
 Bug fixes:
