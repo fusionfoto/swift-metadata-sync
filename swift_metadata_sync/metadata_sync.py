@@ -106,10 +106,10 @@ class MetadataSync(BaseSync):
         update_ops = [self._create_index_op(doc_id, row, internal_client)
                       for doc_id, row in stale_rows]
         _, update_failures = elasticsearch.helpers.bulk(
-                self._es_conn,
-                update_ops,
-                raise_on_error=False,
-                raise_on_exception=False
+            self._es_conn,
+            update_ops,
+            raise_on_error=False,
+            raise_on_exception=False
         )
         self.logger.debug("Index operations: %s" % repr(update_ops))
 
@@ -133,9 +133,9 @@ class MetadataSync(BaseSync):
     def _bulk_delete(self, ops):
         errors = []
         success_count, delete_failures = elasticsearch.helpers.bulk(
-                self._es_conn, ops,
-                raise_on_error=False,
-                raise_on_exception=False
+            self._es_conn, ops,
+            raise_on_error=False,
+            raise_on_exception=False
         )
 
         for op in delete_failures:
@@ -144,7 +144,7 @@ class MetadataSync(BaseSync):
                 if op_info.get('result') == 'not_found':
                     continue
                 # < 5.x Elasticsearch versions do not return "result"
-                if op_info.get('found') == False:
+                if op_info.get('found') is False:
                     continue
             if 'exception' in op_info:
                 errors.append(op_info['exception'])
@@ -172,7 +172,7 @@ class MetadataSync(BaseSync):
                 continue
             object_date = self._get_last_modified_date(row)
             # ElasticSearch only supports milliseconds
-            object_ts = int(float(object_date)*1000)
+            object_ts = int(float(object_date) * 1000)
             if not doc['found'] or object_ts > doc['_source'].get(
                     'x-timestamp', 0):
                 stale_rows.append((doc['_id'], row))
@@ -212,7 +212,7 @@ class MetadataSync(BaseSync):
             missing_fields = self.DOC_MAPPING.keys()
         else:
             current_mapping = mapping[self._index]['mappings'][
-                    self.DOC_TYPE]['properties']
+                self.DOC_TYPE]['properties']
             # We are not going to force re-indexing, so won't be checking the
             # mapping format
             missing_fields = [key for key in self.DOC_MAPPING.keys()
@@ -234,7 +234,7 @@ class MetadataSync(BaseSync):
     def _create_es_doc(meta, account, container, key):
         es_doc = {}
         # ElasticSearch only supports millisecond resolution
-        es_doc['x-timestamp'] = int(float(meta['x-timestamp'])*1000)
+        es_doc['x-timestamp'] = int(float(meta['x-timestamp']) * 1000)
         # Convert Last-Modified header into a millis since epoch date
         ts = email.utils.mktime_tz(
             email.utils.parsedate_tz(meta['last-modified'])) * 1000

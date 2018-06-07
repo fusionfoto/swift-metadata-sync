@@ -1,0 +1,13 @@
+[flake8]
+exclude =
+    .git,
+    venv,
+    test/container,
+    build,
+    dist,
+    src
+ignore =
+    # module level import not at top of file (caused by eventlet)
+    E402,
+    # no 'except:' at least use 'except Exception:'
+    E722

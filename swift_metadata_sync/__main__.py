@@ -17,7 +17,7 @@ def setup_logger(console=False, log_file=None, level='INFO'):
         handler = logging.StreamHandler()
     elif log_file:
         handler = logging.handlers.RotatingFileHandler(log_file,
-                                                       maxBytes=1024*1024*100,
+                                                       maxBytes=100 * 2**20,
                                                        backupCount=5)
     else:
         raise RuntimeError('log file must be set')
@@ -69,6 +69,7 @@ def main():
         logger.error("Metadata Sync failed: %s" % repr(e))
         logger.error(traceback.format_exc(e))
         exit(1)
+
 
 if __name__ == '__main__':
     main()

@@ -261,11 +261,11 @@ class TestMetadataSync(unittest.TestCase):
             '_source': {
                 'content-length': 42,
                 'content-type': 'application/x-fake',
-                'last-modified': 999999*1000,
+                'last-modified': 999999 * 1000,
                 'x-swift-account': self.test_account,
                 'x-swift-container': self.test_container,
                 'x-swift-object': 'object_%d' % i,
-                'x-timestamp': 999999*1000,
+                'x-timestamp': 999999 * 1000,
                 'foo': 'bar'
             }
         } for i in range(1, 10, 2)]
@@ -280,9 +280,10 @@ class TestMetadataSync(unittest.TestCase):
         call = self.sync._es_conn.mget.mock_calls[0]
         self.assertIn('body', call[2])
         self.assertIn('ids', call[2]['body'])
-        id_set = set([self.compute_id(
+        id_set = set(
+            [self.compute_id(
                 self.test_account, self.test_container, 'object_%d' % i)
-            for i in xrange(10)])
+             for i in xrange(10)])
         self.assertEqual(id_set, set(call[2]['body']['ids']))
 
     @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
@@ -331,7 +332,8 @@ class TestMetadataSync(unittest.TestCase):
             self.sync._es_conn, expected_ops, raise_on_error=False,
             raise_on_exception=False)
         self.sync._es_conn.mget.assert_called_once_with(
-            body={'ids': [self.compute_id(
+            body={'ids': [
+                self.compute_id(
                     self.test_account, self.test_container, 'object')]},
             index=self.test_index,
             refresh=True,
@@ -381,7 +383,8 @@ class TestMetadataSync(unittest.TestCase):
             self.sync._es_conn, expected_ops, raise_on_error=False,
             raise_on_exception=False)
         self.sync._es_conn.mget.assert_called_once_with(
-            body={'ids': [self.compute_id(
+            body={'ids': [
+                self.compute_id(
                     self.test_account, self.test_container, rows[0]['name'])]},
             index=self.test_index,
             refresh=True,
@@ -418,8 +421,8 @@ class TestMetadataSync(unittest.TestCase):
                 "x-swift-object": {"type": "string"},
             }),
             ({self.test_index: {"mappings": {swift_type: {
-                "properties": full_mapping}
-             }}}, {})
+                "properties": full_mapping}}}},
+             {})
         ]
 
         for return_mapping, expected_put_mapping in test_mappings:
@@ -473,8 +476,7 @@ class TestMetadataSync(unittest.TestCase):
         index_conn = mock.Mock()
         index_conn.get_mapping.return_value = {
             self.test_index: {'mappings': {
-                swift_type: {'properties': current_mapping}
-                }
+                swift_type: {'properties': current_mapping}}
             }
         }
         es_mock.return_value = es_conn
@@ -544,8 +546,8 @@ class TestMetadataSync(unittest.TestCase):
              'error': {'root_cause': 'index failure reason'}}},
             {'index': {'status': 400, '_id': 'object_2',
                        'error': {
-                            'root_cause': 'index failed',
-                            'caused_by': {'reason': 'more details'}}
+                           'root_cause': 'index failed',
+                           'caused_by': {'reason': 'more details'}}
                        }}
         ])
         swift_mock = mock.Mock()

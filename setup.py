@@ -11,7 +11,7 @@ setup(name='swift-metadata-sync',
       test_suite='nose.collector',
       url='https://github.com/swiftstack/swift-metadata-sync',
       packages=['swift_metadata_sync'],
-      install_requires = reqs,
+      install_requires=reqs,
       entry_points={
           'console_scripts': [
               'swift-metadata-sync = swift_metadata_sync.__main__:main'

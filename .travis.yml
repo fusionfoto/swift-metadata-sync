@@ -1,0 +1,11 @@
+services:
+    - docker
+
+before_install:
+    - docker build -t swift-metadata-sync test/container
+    - container_id=$(mktemp)
+    - docker run -d -v `pwd`:/swift-metadata-sync swift-metadata-sync > "${container_id}"
+
+script:
+    - docker exec -it `cat ${container_id}` /bin/bash -c 'cd /swift-metadata-sync; flake8'
+    - docker exec -it `cat ${container_id}` /bin/bash -c 'cd /swift-metadata-sync; nosetests test/unit'
