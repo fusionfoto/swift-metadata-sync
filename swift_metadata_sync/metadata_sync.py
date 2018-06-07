@@ -38,6 +38,7 @@ class MetadataSync(BaseSync):
         self._server_version = StrictVersion(
             self._es_conn.info()['version']['number'])
         self._index = settings['index']
+        self._parse_json = settings.get('parse_json', False)
         self._verify_mapping()
 
     def get_last_row(self, db_id):
@@ -189,7 +190,8 @@ class MetadataSync(BaseSync):
                 '_type': self.DOC_TYPE,
                 '_source': self._create_es_doc(meta, self._account,
                                                self._container,
-                                               row['name'].decode('utf-8')),
+                                               row['name'].decode('utf-8'),
+                                               self._parse_json),
                 '_id': doc_id}
 
     """
@@ -231,7 +233,13 @@ class MetadataSync(BaseSync):
                                      body={'properties': new_mapping})
 
     @staticmethod
-    def _create_es_doc(meta, account, container, key):
+    def _create_es_doc(meta, account, container, key, parse_json=False):
+        def _parse_document(value):
+            try:
+                return json.loads(value.decode('utf-8'))
+            except ValueError:
+                return value.decode('utf-8')
+
         es_doc = {}
         # ElasticSearch only supports millisecond resolution
         es_doc['x-timestamp'] = int(float(meta['x-timestamp']) * 1000)
@@ -245,7 +253,7 @@ class MetadataSync(BaseSync):
 
         user_meta_keys = dict(
             [(k.split(MetadataSync.USER_META_PREFIX, 1)[1].decode('utf-8'),
-              v.decode('utf-8'))
+              _parse_document(v) if parse_json else v.decode('utf-8'))
              for k, v in meta.items()
              if k.startswith(MetadataSync.USER_META_PREFIX)])
         es_doc.update(user_meta_keys)

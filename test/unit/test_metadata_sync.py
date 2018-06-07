@@ -67,6 +67,9 @@ class TestMetadataSync(unittest.TestCase):
         args = [x.encode('utf-8') if type(x) == unicode else x for x in args]
         return hashlib.sha256('/'.join(args)).hexdigest()
 
+    def test_default_parameters(self):
+        self.assertFalse(self.sync._parse_json)
+
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_get_last_row_nonexistent(self, exists_mock):
         exists_mock.return_value = False
@@ -566,3 +569,63 @@ class TestMetadataSync(unittest.TestCase):
             mock.call("object_2: index failed: more details")
         ]
         self.sync.logger.error.assert_has_calls(expected_error_calls)
+
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    def test_parse_json(self, mock_es, mock_helpers):
+        test_cases = [
+            ('{"bool": true, "number": 1234, "string": "foo"}', True),
+            ('{regular meta}', False)
+        ]
+        obj = 'object'
+
+        obj_meta = {
+            'x-timestamp': 0,
+            'last-modified': 'Wed, 06 Jun 2018 22:24:19 GMT'}
+        doc_id = self.compute_id(self.test_account, self.test_container, obj)
+
+        es_mock = mock_es.return_value
+        es_mock.info.return_value = {'version': {'number': '5.4.0'}}
+        es_mock.mget.return_value = {'docs': [{'_id': doc_id, 'found': False}]}
+
+        sync_conf = dict(self.sync_conf)
+        sync_conf['parse_json'] = True
+        sync = metadata_sync.MetadataSync(self.status_dir, sync_conf)
+
+        for meta, is_json in test_cases:
+            mock_helpers.reset_mock()
+            mock_helpers.bulk.return_value = (None, [])
+
+            test_meta = dict(obj_meta)
+            test_meta['x-object-meta-test'] = meta
+
+            internal_client = mock.Mock()
+            internal_client.get_object_metadata.return_value = test_meta
+
+            sync.handle([{'name': obj,
+                          'deleted': False,
+                          'created_at': 0}],
+                        internal_client)
+
+            if is_json:
+                expected = json.loads(meta)
+            else:
+                expected = meta
+
+            mock_helpers.bulk.assert_called_once_with(
+                es_mock, [
+                    {'_op_type': 'index',
+                     '_id': doc_id,
+                     '_index': self.test_index,
+                     '_type': metadata_sync.MetadataSync.DOC_TYPE,
+                     '_source': {
+                         'test': expected,
+                         'x-timestamp': 0,
+                         'last-modified': 1528323859000,
+                         'x-swift-account': self.test_account,
+                         'x-swift-container': self.test_container,
+                         'x-swift-object': obj}}],
+                raise_on_error=False,
+                raise_on_exception=False)
