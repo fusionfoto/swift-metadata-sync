@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import email
 import hashlib
 import json
@@ -328,7 +326,7 @@ class TestMetadataSync(unittest.TestCase):
                 'x-swift-container': self.test_container,
                 'x-swift-object': 'object',
                 'x-timestamp': 0,
-                u'🐵': u'👍'
+                u'\U0001f435': u'\U0001f44d'
             }
         }]
         helpers_mock.bulk.assert_called_once_with(
@@ -350,7 +348,7 @@ class TestMetadataSync(unittest.TestCase):
                     'last-modified': email.utils.formatdate(0),
                     'x-timestamp': 0}
 
-        rows = [{'name': u'object°'.encode('utf-8'),
+        rows = [{'name': u'object\xb0'.encode('utf-8'),
                  'deleted': False,
                  'created_at': 1000000}]
         es_docs = {'docs': [{'found': False,
@@ -491,10 +489,11 @@ class TestMetadataSync(unittest.TestCase):
             body={'properties': expected_mapping})
 
     def test_unicode_document_id(self):
-        row = {'name': u'monkey-🐵'.encode('utf-8')}
+        row = {'name': u'monkey-\U0001f435'.encode('utf-8')}
         doc_id = self.sync._get_document_id(row)
         self.assertEqual(self.compute_id(
-            self.test_account, self.test_container, u'monkey-🐵'), doc_id)
+            self.test_account, self.test_container, u'monkey-\U0001f435'),
+            doc_id)
 
     # For delete and index failures, we should extract the reason if
     # possible or return the status if not possible.
