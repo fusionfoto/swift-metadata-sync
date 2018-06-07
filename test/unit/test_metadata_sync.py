@@ -67,6 +67,7 @@ class TestMetadataSync(unittest.TestCase):
 
     def test_default_parameters(self):
         self.assertFalse(self.sync._parse_json)
+        self.assertEqual(None, self.sync._pipeline)
 
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_get_last_row_nonexistent(self, exists_mock):
@@ -628,3 +629,45 @@ class TestMetadataSync(unittest.TestCase):
                          'x-swift-object': obj}}],
                 raise_on_error=False,
                 raise_on_exception=False)
+
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    def test_set_pipeline(self, es_mock, helpers_mock):
+        pipeline = 'test-pipeline'
+        obj = 'object'
+        doc_id = self.compute_id(self.test_account, self.test_container, obj)
+
+        config = dict(self.sync_conf)
+        config['pipeline'] = pipeline
+
+        es_mock.return_value.info.return_value = {
+            'version': {'number': '5.4.0'}}
+        es_mock.return_value.mget.return_value = {
+            'docs': [{'_id': doc_id, 'found': False}]}
+        internal_client = mock.Mock()
+        internal_client.get_object_metadata.return_value = {
+            'x-timestamp': 0,
+            'last-modified': 'Wed, 06 Jun 2018 22:24:19 GMT'
+        }
+        helpers_mock.bulk.return_value = (None, [])
+
+        sync = metadata_sync.MetadataSync(self.status_dir, config)
+        sync.handle([{'name': obj, 'deleted': False, 'created_at': 0}],
+                    internal_client)
+        helpers_mock.bulk.assert_called_once_with(
+            es_mock.return_value,
+            [{'_op_type': 'index',
+              '_id': doc_id,
+              '_index': self.test_index,
+              '_type': metadata_sync.MetadataSync.DOC_TYPE,
+              '_source': {
+                  'x-timestamp': 0,
+                  'last-modified': 1528323859000,
+                  'x-swift-account': self.test_account,
+                  'x-swift-container': self.test_container,
+                  'x-swift-object': obj,
+              },
+              'pipeline': 'test-pipeline'}],
+            raise_on_error=False,
+            raise_on_exception=False)

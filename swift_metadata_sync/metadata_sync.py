@@ -39,6 +39,7 @@ class MetadataSync(BaseSync):
             self._es_conn.info()['version']['number'])
         self._index = settings['index']
         self._parse_json = settings.get('parse_json', False)
+        self._pipeline = settings.get('pipeline')
         self._verify_mapping()
 
     def get_last_row(self, db_id):
@@ -185,14 +186,17 @@ class MetadataSync(BaseSync):
         swift_hdrs = {'X-Newest': True}
         meta = internal_client.get_object_metadata(
             self._account, self._container, row['name'], headers=swift_hdrs)
-        return {'_op_type': 'index',
-                '_index': self._index,
-                '_type': self.DOC_TYPE,
-                '_source': self._create_es_doc(meta, self._account,
-                                               self._container,
-                                               row['name'].decode('utf-8'),
-                                               self._parse_json),
-                '_id': doc_id}
+        op = {'_op_type': 'index',
+              '_index': self._index,
+              '_type': self.DOC_TYPE,
+              '_source': self._create_es_doc(meta, self._account,
+                                             self._container,
+                                             row['name'].decode('utf-8'),
+                                             self._parse_json),
+              '_id': doc_id}
+        if self._pipeline:
+            op['pipeline'] = self._pipeline
+        return op
 
     """
         Verify document mapping for the elastic search index. Does not include
