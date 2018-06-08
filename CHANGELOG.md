@@ -1,3 +1,11 @@
+## 0.0.11 (2018-06-08)
+
+Features:
+
+    - Allow for parsing JSON from metadata values.
+    - Operators can define the Elasticsearch pipeline to be used when indexing
+      documents.
+
 ## 0.0.10 (2017-09-11)
 
 Bug fixes:
